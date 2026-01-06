@@ -1,1 +1,1 @@
-pip install lightkurve numpy scipy matplotlib
+pip install streamlit lightkurve numpy scipy matplotlib
