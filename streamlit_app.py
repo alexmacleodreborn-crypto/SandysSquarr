@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # App config
 # ==================================================
 st.set_page_config(
-    page_title="Sandy’s Law — Square, Shear & Collapse",
+    page_title="Sandy’s Law — Square, Shear & Collapse (Final)",
     layout="wide"
 )
 
@@ -57,16 +57,17 @@ def compute_corner_dwell(Z, S, dt, corner_th):
     return dwell_time, dwell_fraction
 
 # ==================================================
-# Core dynamics (FIXED)
+# Core dynamics
 # ==================================================
 
+# ---------- TOY 1: TRUE SQUARE (BOUNDARY DRIVER)
 def square_toy(steps, dt):
     Z, S = 0.6, 0.4
     Zh, Sh = [], []
 
     for _ in range(steps):
-        # Linear push AWAY from centre (not sign!)
-        dZ = (0.5 - Z)
+        # PUSH AWAY from centre → boundary hugging
+        dZ = (Z - 0.5)
         dS = (S - 0.5)
 
         Z = clamp(Z + dt * dZ, 0, 1)
@@ -77,15 +78,16 @@ def square_toy(steps, dt):
 
     return np.array(Zh), np.array(Sh)
 
+# ---------- TOY 2: COUPLED (SHEAR / LOOPS)
 def coupled_toy(steps, dt, k_zs, k_sz):
     Z, S = 0.6, 0.4
     Zh, Sh = [], []
 
     for _ in range(steps):
+        # Centre-restoring + coupling → tilted loops
         dZ = (0.5 - Z)
-        dS = (S - 0.5)
+        dS = (0.5 - S)
 
-        # Coupling
         dZ += k_zs * (S - 0.5)
         dS += k_sz * (Z - 0.5)
 
@@ -97,6 +99,7 @@ def coupled_toy(steps, dt, k_zs, k_sz):
 
     return np.array(Zh), np.array(Sh)
 
+# ---------- TOY 3: SQUARE → CORNER → COLLAPSE
 def corner_collapse_toy(
     steps, dt, drive_Z, drive_S, k_collapse, corner_th
 ):
@@ -108,13 +111,14 @@ def corner_collapse_toy(
                (z < 1 - corner_th and s < 1 - corner_th)
 
     for _ in range(steps):
-        dZ = drive_Z * (0.5 - Z)
+        # Outward square driver
+        dZ = drive_Z * (Z - 0.5)
         dS = drive_S * (S - 0.5)
 
+        # Collapse only when corner reached
         if in_corner(Z, S):
-            # Collapse impulse
             dZ -= k_collapse * (Z - 0.5)
-            dS += k_collapse * (0.5 - S)
+            dS -= k_collapse * (S - 0.5)
 
         Z = clamp(Z + dt * dZ, 0, 1)
         S = clamp(S + dt * dS, 0, 1)
@@ -147,7 +151,7 @@ k_zs = st.sidebar.slider("k_ZΣ (Σ → Z)", -3.0, 3.0, 1.5, 0.1)
 k_sz = st.sidebar.slider("k_ΣZ (Z → Σ)", -3.0, 3.0, -1.2, 0.1)
 
 drive_Z = st.sidebar.slider("Drive Z", 0.5, 2.0, 1.0, 0.1)
-drive_S = st.sidebar.slider("Drive Σ", 0.5, 2.0, 1.2, 0.1)
+drive_S = st.sidebar.slider("Drive Σ", 0.5, 2.0, 1.0, 0.1)
 k_collapse = st.sidebar.slider("Collapse Strength", 0.5, 5.0, 2.5, 0.1)
 corner_th = st.sidebar.slider("Corner Threshold", 0.75, 0.95, 0.85, 0.01)
 
@@ -158,19 +162,19 @@ corner_th = st.sidebar.slider("Corner Threshold", 0.75, 0.95, 0.85, 0.01)
 if mode == "Square (BPSR)":
     st.subheader("Toy 1 — Bounded Phase-Space Regime (Square)")
     Z, S = square_toy(steps, dt)
-    plot_phase(Z, S, "Square: Independent + Clamped")
+    plot_phase(Z, S, "Square: Boundary-Hugging BPSR")
     if show_ts:
         plot_timeseries(Z, S)
 
 elif mode == "Coupled (Shear)":
-    st.subheader("Toy 2 — Coupled System (Square Shears)")
+    st.subheader("Toy 2 — Coupled System (Shear / Loops)")
     Z, S = coupled_toy(steps, dt, k_zs, k_sz)
-    plot_phase(Z, S, "Coupled: Geometry Tilts / Breaks")
+    plot_phase(Z, S, "Coupled: Geometry Tilts / Loops")
     if show_ts:
         plot_timeseries(Z, S)
 
 elif mode == "Square → Corner Collapse":
-    st.subheader("Toy 3 — Edge → Corner → Collapse")
+    st.subheader("Toy 3 — Square → Corner → Collapse")
     Z, S = corner_collapse_toy(
         steps, dt, drive_Z, drive_S, k_collapse, corner_th
     )
@@ -199,12 +203,12 @@ elif mode == "Square → Corner Collapse":
 with st.expander("Physical Interpretation (Sandy’s Law)"):
     st.markdown(
         """
-• **Square** → bounded phase space, time locked  
+• **Square (BPSR)** → bounded phase space, time locked  
 • **Shear** → coupling unlocks time  
 • **Corners** → instability precursors  
 • **Collapse strength** → how violently release occurs  
 
-This is deterministic.  
-If behaviour changes, structure has changed.
+This model is deterministic.  
+If the geometry changes, the structure has changed.
 """
     )
