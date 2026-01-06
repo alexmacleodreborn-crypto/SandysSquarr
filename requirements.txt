@@ -1,5 +1,7 @@
 streamlit>=1.30
 numpy>=1.21
 matplotlib>=3.5
-lightkurve  
+pip install lightkurve 
+numpy 
 scipy 
+matplotlib
