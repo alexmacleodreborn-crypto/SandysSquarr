@@ -6,12 +6,12 @@ import matplotlib.pyplot as plt
 # App config
 # ==================================================
 st.set_page_config(
-    page_title="Sandy’s Law — Square & Collapse Toys",
+    page_title="Sandy’s Law — Square, Collapse & Dwell",
     layout="wide"
 )
 
-st.title("Sandy’s Law — Bounded Phase-Space Toys")
-st.caption("Trap → Transition → Escape | Deterministic diagnostic models")
+st.title("Sandy’s Law — Bounded Phase-Space & Corner Dwell")
+st.caption("Trap → Transition → Escape | Deterministic diagnostic & predictive toy")
 
 # ==================================================
 # Utilities
@@ -44,6 +44,19 @@ def plot_timeseries(Z, S):
     ax.grid(True, alpha=0.4)
     st.pyplot(fig)
     plt.close(fig)
+
+def compute_corner_dwell(Z, S, dt, corner_th):
+    dwell_steps = 0
+    for z, s in zip(Z, S):
+        if (z > corner_th and s > corner_th) or \
+           (z < 1 - corner_th and s < 1 - corner_th):
+            dwell_steps += 1
+
+    dwell_time = dwell_steps * dt
+    total_time = len(Z) * dt
+    dwell_fraction = dwell_time / total_time if total_time > 0 else 0.0
+
+    return dwell_time, dwell_fraction
 
 # ==================================================
 # Toy implementations
@@ -82,7 +95,9 @@ def coupled_toy(steps, dt, k_zs, k_sz):
 
     return np.array(Zh), np.array(Sh)
 
-def corner_collapse_toy(steps, dt, drive_Z, drive_S, k_collapse, corner_th):
+def corner_collapse_toy(
+    steps, dt, drive_Z, drive_S, k_collapse, corner_th
+):
     Z, S = 0.6, 0.4
     Zh, Sh = [], []
 
@@ -123,7 +138,6 @@ mode = st.sidebar.radio(
 
 steps = st.sidebar.slider("Steps", 500, 8000, 4000, 500)
 dt = st.sidebar.slider("dt", 0.001, 0.05, 0.02, 0.001)
-
 show_timeseries = st.sidebar.checkbox("Show Time Series", value=True)
 
 # Coupling parameters
@@ -160,8 +174,27 @@ elif mode == "Square → Corner Collapse":
         steps, dt, drive_Z, drive_S, k_collapse, corner_th
     )
     plot_phase(Z, S, "Square → Edge Lock → Corner Collapse")
+
     if show_timeseries:
         plot_timeseries(Z, S)
+
+    # ------------------------------
+    # Corner dwell diagnostics (A)
+    # ------------------------------
+    dwell_time, dwell_fraction = compute_corner_dwell(Z, S, dt, corner_th)
+
+    st.markdown("### 🔴 Corner Dwell Diagnostics")
+
+    col1, col2 = st.columns(2)
+    col1.metric("Corner dwell time", f"{dwell_time:.3f} time-units")
+    col2.metric("Corner dwell fraction", f"{100*dwell_fraction:.2f} %")
+
+    if dwell_fraction < 0.05:
+        st.success("Low corner dwell → Stable / persistent regime")
+    elif dwell_fraction < 0.15:
+        st.warning("Moderate corner dwell → Pre-instability regime")
+    else:
+        st.error("High corner dwell → Imminent release likely")
 
 # ==================================================
 # Interpretation panel
@@ -176,11 +209,10 @@ Independent, bounded evolution → time is locked → persistence.
 **Coupled regime**  
 Σ influences Z and vice versa → geometry tilts → escape possible.
 
-**Corner collapse**  
-Extreme trap + extreme escape → instability → release pathway.
+**Corner dwell**  
+Time spent in extreme Z–Σ states quantifies instability pressure.
 
-This app is deterministic.  
-If structure changes, the geometry changes — not because of noise,
-but because time unlocks.
+**Key result**  
+Corners are not limits — they are failure precursors.
 """
     )
