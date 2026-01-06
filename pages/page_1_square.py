@@ -11,37 +11,59 @@ st.set_page_config(
 )
 
 st.title("Toy 1 — Bounded Phase Space (Square)")
-st.caption("Independent clocks → bounded square traversal")
+st.caption("Independent clocks → deterministic square traversal")
 
 # ==================================================
-# Controls
+# Sidebar controls
 # ==================================================
 st.sidebar.header("Controls")
 
-steps = st.sidebar.slider("Steps", 500, 10000, 5000, 500)
-dt = st.sidebar.slider("dt", 0.001, 0.05, 0.01, 0.001)
+steps = st.sidebar.slider(
+    "Steps (simulation length)",
+    1000, 50000, 20000, 1000
+)
 
-Tz = st.sidebar.slider("Z period", 0.5, 5.0, 1.0, 0.1)
-Ts = st.sidebar.slider("Σ period", 0.5, 5.0, 1.7, 0.1)
+dt = st.sidebar.slider(
+    "dt (time step)",
+    0.001, 0.05, 0.013, 0.001
+)
+
+Tz = st.sidebar.slider(
+    "Z period",
+    0.5, 5.0, 1.0, 0.01
+)
+
+Ts = st.sidebar.slider(
+    "Σ period",
+    0.5, 5.0, 1.618, 0.001
+)
+
+plot_stride = st.sidebar.slider(
+    "Plot stride (rendering performance)",
+    1, 50, 1, 1,
+    help="Plot every Nth point to keep large runs fast"
+)
 
 show_ts = st.sidebar.checkbox("Show Time Series", True)
 
 # ==================================================
-# Core dynamics — independent clocks
+# Core dynamics — independent clocks (NO coupling)
 # ==================================================
-
 t = np.arange(steps) * dt
 
 Z = (t / Tz) % 1.0
 S = (t / Ts) % 1.0
 
+# Downsample for plotting only
+Zp = Z[::plot_stride]
+Sp = S[::plot_stride]
+
 # ==================================================
 # Plot helpers
 # ==================================================
-
 def plot_phase(Z, S):
     fig, ax = plt.subplots(figsize=(5, 5))
-    ax.plot(Z, S, lw=1.2)
+    ax.plot(Z, S, lw=1.1)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.set_aspect("equal")
@@ -67,37 +89,42 @@ def plot_timeseries(Z, S):
 # ==================================================
 # Display
 # ==================================================
-
 st.subheader("Phase Space")
-plot_phase(Z, S)
+plot_phase(Zp, Sp)
 
 if show_ts:
     st.subheader("Time Series")
-    plot_timeseries(Z, S)
+    plot_timeseries(Zp, Sp)
 
 # ==================================================
 # Interpretation
 # ==================================================
-
-with st.expander("Physical Interpretation"):
+with st.expander("Physical Interpretation (Sandy’s Law)"):
     st.markdown(
         """
-**What you are seeing**
+**What this toy demonstrates**
 
 • Z and Σ evolve independently  
-• Each variable is bounded in [0, 1]  
-• The system explores the full square  
-• No coupling, no collapse, no damping  
+• Both variables are bounded in [0, 1]  
+• The system explores a square phase space  
+• No coupling, no damping, no collapse  
 
-**Why this matters**
+**Why diagonal structure may appear**
 
-This is the **baseline trapped regime** in Sandy’s Law.
+• Finite time sampling  
+• Discrete dt grid  
+• Rational or near-rational clock ratios  
 
-Time exists, but:
-- it is local
-- it is bounded
-- it does not unlock escape
+This is expected and correct.
 
-Every other toy must be compared **against this reference**.
+**Role in Sandy’s Law**
+
+This is the **baseline trapped regime**:
+- Time exists
+- Motion exists
+- Escape does not
+
+All higher-order behaviour (shear, dwell, collapse)
+must be compared against this reference.
 """
     )
