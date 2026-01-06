@@ -6,11 +6,11 @@ import matplotlib.pyplot as plt
 # App config
 # ==================================================
 st.set_page_config(
-    page_title="Sandy’s Law — Square, Coupling & Collapse (Full Fix)",
+    page_title="Sandy’s Law — Square, Shear & Collapse",
     layout="wide"
 )
 
-st.title("Sandy’s Law — Bounded Phase Space & Corner Collapse")
+st.title("Sandy’s Law — Bounded Phase Space & Collapse")
 st.caption("Trap → Transition → Escape | Deterministic diagnostic model")
 
 # ==================================================
@@ -46,26 +46,30 @@ def plot_timeseries(Z, S):
     plt.close(fig)
 
 def compute_corner_dwell(Z, S, dt, corner_th):
-    dwell_steps = 0
+    steps_in_corner = 0
     for z, s in zip(Z, S):
         if (z > corner_th and s > corner_th) or \
            (z < 1 - corner_th and s < 1 - corner_th):
-            dwell_steps += 1
+            steps_in_corner += 1
 
-    dwell_time = dwell_steps * dt
-    dwell_fraction = dwell_time / (len(Z) * dt)
+    dwell_time = steps_in_corner * dt
+    dwell_fraction = dwell_time / (len(Z) * dt) if len(Z) > 0 else 0.0
     return dwell_time, dwell_fraction
 
 # ==================================================
 # Core dynamics
 # ==================================================
 
-# ---------- TOY 1: TRUE SQUARE (BOUNDARY SEEKING)
 def square_toy(steps, dt):
+    """
+    Toy 1: True boundary-hugging square (BPSR-like).
+    Push away from centre + clamp.
+    """
     Z, S = 0.6, 0.4
     Zh, Sh = [], []
 
     for _ in range(steps):
+        # PUSH AWAY from centre (true square driver)
         dZ = (Z - 0.5)
         dS = (S - 0.5)
 
@@ -77,15 +81,18 @@ def square_toy(steps, dt):
 
     return np.array(Zh), np.array(Sh)
 
-# ---------- TOY 2: COUPLED (ROTATION + RELAXATION)
 def coupled_toy(steps, dt, k_zs, k_sz):
+    """
+    Toy 2: Coupled system.
+    """
     Z, S = 0.6, 0.4
     Zh, Sh = [], []
 
     for _ in range(steps):
         dZ = (0.5 - Z)
-        dS = (0.5 - S)
+        dS = (S - 0.5)
 
+        # Coupling
         dZ += k_zs * (S - 0.5)
         dS += k_sz * (Z - 0.5)
 
@@ -97,10 +104,10 @@ def coupled_toy(steps, dt, k_zs, k_sz):
 
     return np.array(Zh), np.array(Sh)
 
-# ---------- TOY 3: SQUARE → CORNER → DWELL → COLLAPSE
-def corner_collapse_toy(
-    steps, dt, drive_Z, drive_S, k_collapse, corner_th
-):
+def corner_collapse_toy(steps, dt, drive_Z, drive_S, k_collapse, corner_th):
+    """
+    Toy 3: Your original 'worked' collapse logic.
+    """
     Z, S = 0.6, 0.4
     Zh, Sh = [], []
 
@@ -109,14 +116,13 @@ def corner_collapse_toy(
                (z < 1 - corner_th and s < 1 - corner_th)
 
     for _ in range(steps):
-        # Outward square driver
-        dZ = drive_Z * (Z - 0.5)
+        dZ = drive_Z * (0.5 - Z)
         dS = drive_S * (S - 0.5)
 
-        # COLLAPSE: quench motion, do not reverse it
         if in_corner(Z, S):
-            dZ *= (1 - k_collapse)
-            dS *= (1 - k_collapse)
+            # Collapse impulse (your working version)
+            dZ -= k_collapse * (Z - 0.5)
+            dS += k_collapse * (0.5 - S)
 
         Z = clamp(Z + dt * dZ, 0, 1)
         S = clamp(S + dt * dS, 0, 1)
@@ -136,21 +142,21 @@ mode = st.sidebar.radio(
     "Toy Mode",
     [
         "Square (BPSR)",
-        "Coupled (Shear / Loops)",
+        "Coupled (Shear)",
         "Square → Corner Collapse"
     ]
 )
 
-steps = st.sidebar.slider("Steps", 1000, 9000, 6000, 500)
-dt = st.sidebar.slider("dt", 0.005, 0.06, 0.04, 0.001)
+steps = st.sidebar.slider("Steps", 1000, 8000, 5000, 500)
+dt = st.sidebar.slider("dt", 0.005, 0.05, 0.03, 0.001)
 show_ts = st.sidebar.checkbox("Show Time Series", True)
 
 k_zs = st.sidebar.slider("k_ZΣ (Σ → Z)", -3.0, 3.0, 1.5, 0.1)
 k_sz = st.sidebar.slider("k_ΣZ (Z → Σ)", -3.0, 3.0, -1.2, 0.1)
 
-drive_Z = st.sidebar.slider("Drive Z", 0.5, 2.0, 1.2, 0.1)
+drive_Z = st.sidebar.slider("Drive Z", 0.5, 2.0, 1.0, 0.1)
 drive_S = st.sidebar.slider("Drive Σ", 0.5, 2.0, 1.2, 0.1)
-k_collapse = st.sidebar.slider("Collapse Strength", 0.05, 0.9, 0.4, 0.05)
+k_collapse = st.sidebar.slider("Collapse Strength", 0.5, 5.0, 2.5, 0.1)
 corner_th = st.sidebar.slider("Corner Threshold", 0.75, 0.95, 0.85, 0.01)
 
 # ==================================================
@@ -160,28 +166,27 @@ corner_th = st.sidebar.slider("Corner Threshold", 0.75, 0.95, 0.85, 0.01)
 if mode == "Square (BPSR)":
     st.subheader("Toy 1 — Bounded Phase-Space Regime (Square)")
     Z, S = square_toy(steps, dt)
-    plot_phase(Z, S, "Square: Boundary-Hugging BPSR")
+    plot_phase(Z, S, "Square: Independent + Clamped")
     if show_ts:
         plot_timeseries(Z, S)
 
-elif mode == "Coupled (Shear / Loops)":
-    st.subheader("Toy 2 — Coupled System (Shear / Loops)")
+elif mode == "Coupled (Shear)":
+    st.subheader("Toy 2 — Coupled System (Square Shears)")
     Z, S = coupled_toy(steps, dt, k_zs, k_sz)
-    plot_phase(Z, S, "Coupled: Geometry Tilts / Loops")
+    plot_phase(Z, S, "Coupled: Geometry Tilts / Breaks")
     if show_ts:
         plot_timeseries(Z, S)
 
 elif mode == "Square → Corner Collapse":
-    st.subheader("Toy 3 — Square → Corner → Dwell → Collapse")
-    Z, S = corner_collapse_toy(
-        steps, dt, drive_Z, drive_S, k_collapse, corner_th
-    )
+    st.subheader("Toy 3 — Edge → Corner → Collapse")
+    Z, S = corner_collapse_toy(steps, dt, drive_Z, drive_S, k_collapse, corner_th)
     plot_phase(Z, S, "Square → Corner Collapse")
     if show_ts:
         plot_timeseries(Z, S)
 
     dwell_t, dwell_f = compute_corner_dwell(Z, S, dt, corner_th)
 
+    # This is when Toy 3 worked
     st.markdown("### 🔴 Corner Dwell Diagnostics")
     c1, c2 = st.columns(2)
     c1.metric("Corner dwell time", f"{dwell_t:.3f}")
@@ -201,11 +206,12 @@ elif mode == "Square → Corner Collapse":
 with st.expander("Physical Interpretation (Sandy’s Law)"):
     st.markdown(
         """
-• **Square (BPSR)** → bounded phase space, time locked  
-• **Coupling** → geometry tilts, time unlocks  
+• **Square** → bounded phase space, time locked  
+• **Shear** → coupling unlocks time  
 • **Corners** → instability precursors  
-• **Collapse strength** → quenching of structure, not reversal  
+• **Collapse strength** → how violently release occurs  
 
-Corner dwell is the predictive signal.
+This is deterministic.  
+If behaviour changes, structure has changed.
 """
     )
