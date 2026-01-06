@@ -108,7 +108,7 @@ def corner_collapse_toy(steps, dt, drive_Z, drive_S, k_collapse, corner_th):
     """
     Toy 3: Your original 'worked' collapse logic.
     """
-    Z, S = 0.6, 0.4
+    Z, S = 0.5, 0.5
     Zh, Sh = [], []
 
     def in_corner(z, s):
