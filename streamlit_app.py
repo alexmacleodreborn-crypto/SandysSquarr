@@ -1,146 +1,186 @@
-"""
-Sandy's Law — Square / Coupling / Corner Collapse Toys
-=====================================================
-
-This file reproduces all toy behaviours discussed in the chat:
-
-1. Square (Bounded Phase-Space Regime, BPSR)
-2. Coupled system (square shears / breaks)
-3. Square → Edge Lock → Corner Collapse
-4. Time series diagnostics
-
-Author: Sandy's Law Project
-"""
-
+import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 
-# --------------------------------------------------
+# ==================================================
+# App config
+# ==================================================
+st.set_page_config(
+    page_title="Sandy’s Law — Square & Collapse Toys",
+    layout="wide"
+)
+
+st.title("Sandy’s Law — Bounded Phase-Space Toys")
+st.caption("Trap → Transition → Escape | Deterministic diagnostic models")
+
+# ==================================================
 # Utilities
-# --------------------------------------------------
+# ==================================================
 
 def clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
 def plot_phase(Z, S, title):
-    plt.figure(figsize=(5, 5))
-    plt.plot(Z, S, linewidth=1.2)
-    plt.xlabel("Z (Trap Strength)")
-    plt.ylabel("Σ (Entropy Escape)")
-    plt.title(title)
-    plt.xlim(0, 1)
-    plt.ylim(0, 1)
-    plt.gca().set_aspect('equal')
-    plt.grid(True, alpha=0.4)
-    plt.show()
+    fig, ax = plt.subplots(figsize=(5, 5))
+    ax.plot(Z, S, linewidth=1.2)
+    ax.set_xlabel("Z (Trap Strength)")
+    ax.set_ylabel("Σ (Entropy Escape)")
+    ax.set_title(title)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.4)
+    st.pyplot(fig)
+    plt.close(fig)
 
-# --------------------------------------------------
-# TOY 1: Square (Independent + Clamped)
-# --------------------------------------------------
+def plot_timeseries(Z, S):
+    fig, ax = plt.subplots(figsize=(7, 3))
+    ax.plot(Z, label="Z")
+    ax.plot(S, label="Σ")
+    ax.set_title("Time Series")
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Value")
+    ax.legend()
+    ax.grid(True, alpha=0.4)
+    st.pyplot(fig)
+    plt.close(fig)
 
-def run_square_toy(steps=4000, dt=0.02):
+# ==================================================
+# Toy implementations
+# ==================================================
+
+def square_toy(steps, dt):
     Z, S = 0.6, 0.4
-    Z_hist, S_hist = [], []
+    Zh, Sh = [], []
 
-    for t in range(steps):
+    for _ in range(steps):
+        dZ = np.sign(0.5 - Z)
+        dS = np.sign(S - 0.5)
+        Z = clamp(Z + dt * dZ, 0, 1)
+        S = clamp(S + dt * dS, 0, 1)
+        Zh.append(Z)
+        Sh.append(S)
+
+    return np.array(Zh), np.array(Sh)
+
+def coupled_toy(steps, dt, k_zs, k_sz):
+    Z, S = 0.6, 0.4
+    Zh, Sh = [], []
+
+    for _ in range(steps):
         dZ = np.sign(0.5 - Z)
         dS = np.sign(S - 0.5)
 
-        Z = clamp(Z + dt * dZ, 0.0, 1.0)
-        S = clamp(S + dt * dS, 0.0, 1.0)
-
-        Z_hist.append(Z)
-        S_hist.append(S)
-
-    return np.array(Z_hist), np.array(S_hist)
-
-# --------------------------------------------------
-# TOY 2: Coupled (Square Breaks / Shears)
-# --------------------------------------------------
-
-def run_coupled_toy(steps=4000, dt=0.02, k_zs=1.2, k_sz=-0.8):
-    Z, S = 0.6, 0.4
-    Z_hist, S_hist = [], []
-
-    for t in range(steps):
-        dZ = np.sign(0.5 - Z)
-        dS = np.sign(S - 0.5)
-
-        # Coupling terms
         dZ += k_zs * (S - 0.5)
         dS += k_sz * (Z - 0.5)
 
-        Z = clamp(Z + dt * dZ, 0.0, 1.0)
-        S = clamp(S + dt * dS, 0.0, 1.0)
+        Z = clamp(Z + dt * dZ, 0, 1)
+        S = clamp(S + dt * dS, 0, 1)
 
-        Z_hist.append(Z)
-        S_hist.append(S)
+        Zh.append(Z)
+        Sh.append(S)
 
-    return np.array(Z_hist), np.array(S_hist)
+    return np.array(Zh), np.array(Sh)
 
-# --------------------------------------------------
-# TOY 3: Square → Edge Lock → Corner Collapse
-# --------------------------------------------------
-
-def run_corner_collapse_toy(
-    steps=5000,
-    dt=0.01,
-    drive_Z=0.6,
-    drive_S=0.4,
-    k_collapse=2.5,
-    corner_threshold=0.9
-):
+def corner_collapse_toy(steps, dt, drive_Z, drive_S, k_collapse, corner_th):
     Z, S = 0.6, 0.4
-    Z_hist, S_hist = [], []
+    Zh, Sh = [], []
 
     def in_corner(z, s):
-        return (z > corner_threshold and s > corner_threshold) or \
-               (z < 1 - corner_threshold and s < 1 - corner_threshold)
+        return (z > corner_th and s > corner_th) or \
+               (z < 1 - corner_th and s < 1 - corner_th)
 
-    for t in range(steps):
-
-        # Independent drives (square-forming)
+    for _ in range(steps):
         dZ = drive_Z * np.sign(0.5 - Z)
         dS = drive_S * np.sign(S - 0.5)
 
-        # Corner-triggered collapse
         if in_corner(Z, S):
             dZ -= k_collapse * (Z - 0.5)
             dS += k_collapse * (0.5 - S)
 
-        Z = clamp(Z + dt * dZ, 0.0, 1.0)
-        S = clamp(S + dt * dS, 0.0, 1.0)
+        Z = clamp(Z + dt * dZ, 0, 1)
+        S = clamp(S + dt * dS, 0, 1)
 
-        Z_hist.append(Z)
-        S_hist.append(S)
+        Zh.append(Z)
+        Sh.append(S)
 
-    return np.array(Z_hist), np.array(S_hist)
+    return np.array(Zh), np.array(Sh)
 
-# --------------------------------------------------
-# MAIN EXECUTION
-# --------------------------------------------------
+# ==================================================
+# Sidebar controls
+# ==================================================
 
-if __name__ == "__main__":
+st.sidebar.header("Simulation Controls")
 
-    # --- Toy 1: Square ---
-    Z1, S1 = run_square_toy()
-    plot_phase(Z1, S1, "Toy 1: Square (Bounded Phase-Space Regime)")
+mode = st.sidebar.radio(
+    "Select Toy",
+    [
+        "Square (BPSR)",
+        "Coupled (Square Breaks)",
+        "Square → Corner Collapse"
+    ]
+)
 
-    # --- Toy 2: Coupled ---
-    Z2, S2 = run_coupled_toy()
-    plot_phase(Z2, S2, "Toy 2: Coupled (Square Breaks / Shears)")
+steps = st.sidebar.slider("Steps", 500, 8000, 4000, 500)
+dt = st.sidebar.slider("dt", 0.001, 0.05, 0.02, 0.001)
 
-    # --- Toy 3: Corner Collapse ---
-    Z3, S3 = run_corner_collapse_toy()
-    plot_phase(Z3, S3, "Toy 3: Square → Edge Lock → Corner Collapse")
+show_timeseries = st.sidebar.checkbox("Show Time Series", value=True)
 
-    # --- Time series (square mode) ---
-    plt.figure(figsize=(7, 3))
-    plt.plot(Z1, label="Z (square mode)")
-    plt.plot(S1, label="Σ (square mode)")
-    plt.title("Time Series — Square Mode")
-    plt.xlabel("step")
-    plt.ylabel("value")
-    plt.legend()
-    plt.grid(True, alpha=0.4)
-    plt.show()
+# Coupling parameters
+k_zs = st.sidebar.slider("k_ZΣ (Σ → Z)", -3.0, 3.0, 1.2, 0.1)
+k_sz = st.sidebar.slider("k_ΣZ (Z → Σ)", -3.0, 3.0, -0.8, 0.1)
+
+# Collapse parameters
+drive_Z = st.sidebar.slider("Drive Z", 0.1, 2.0, 0.6, 0.1)
+drive_S = st.sidebar.slider("Drive Σ", 0.1, 2.0, 0.4, 0.1)
+k_collapse = st.sidebar.slider("Collapse Strength", 0.5, 5.0, 2.5, 0.1)
+corner_th = st.sidebar.slider("Corner Threshold", 0.7, 0.98, 0.9, 0.01)
+
+# ==================================================
+# Run selected toy
+# ==================================================
+
+if mode == "Square (BPSR)":
+    st.subheader("Toy 1 — Bounded Phase-Space Regime (Square)")
+    Z, S = square_toy(steps, dt)
+    plot_phase(Z, S, "Square: Independent + Clamped")
+    if show_timeseries:
+        plot_timeseries(Z, S)
+
+elif mode == "Coupled (Square Breaks)":
+    st.subheader("Toy 2 — Coupled System (Square Shears)")
+    Z, S = coupled_toy(steps, dt, k_zs, k_sz)
+    plot_phase(Z, S, "Coupled: Geometry Tilts / Breaks")
+    if show_timeseries:
+        plot_timeseries(Z, S)
+
+elif mode == "Square → Corner Collapse":
+    st.subheader("Toy 3 — Edge Lock → Corner Collapse")
+    Z, S = corner_collapse_toy(
+        steps, dt, drive_Z, drive_S, k_collapse, corner_th
+    )
+    plot_phase(Z, S, "Square → Edge Lock → Corner Collapse")
+    if show_timeseries:
+        plot_timeseries(Z, S)
+
+# ==================================================
+# Interpretation panel
+# ==================================================
+
+with st.expander("Physical Interpretation (Sandy’s Law)", expanded=False):
+    st.markdown(
+        """
+**Square (BPSR)**  
+Independent, bounded evolution → time is locked → persistence.
+
+**Coupled regime**  
+Σ influences Z and vice versa → geometry tilts → escape possible.
+
+**Corner collapse**  
+Extreme trap + extreme escape → instability → release pathway.
+
+This app is deterministic.  
+If structure changes, the geometry changes — not because of noise,
+but because time unlocks.
+"""
+    )
