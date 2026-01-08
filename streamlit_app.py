@@ -1,167 +1,205 @@
+# phase_square_coherence.py
+# Sandy’s Law — Phase Coherence Instrument
+# Phase geometry only • No time • No order • No dynamics
+
 import streamlit as st
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter
-import lightkurve as lk
+from io import StringIO
+from matplotlib.colors import ListedColormap
 
-# ============================================================
-# STREAMLIT CONFIG
-# ============================================================
-
+# -------------------------------------------------
+# Page setup
+# -------------------------------------------------
 st.set_page_config(
-    page_title="Toy 3 — Corner Dwell & Quench (LightCurve)",
+    page_title="Sandy’s Law — Phase Coherence Square",
     layout="wide"
 )
 
-st.title("Toy 3 — Corner Dwell & Quench")
-st.caption("Escape-controlled evolution using real LightCurve data")
-
-# ============================================================
-# SIDEBAR CONTROLS
-# ============================================================
-
-st.sidebar.header("Data Source")
-
-target = st.sidebar.text_input(
-    "TESS Target (validation star)",
-    value="TIC 141914082"
+st.title("Sandy’s Law — Phase Coherence Instrument")
+st.caption(
+    "Phase geometry only • No time • Order carries no physics • "
+    "Coherence arises from phase crowding"
 )
 
-z_th = st.sidebar.slider("Z threshold (trap)", 0.5, 0.95, 0.7, 0.01)
-s_th = st.sidebar.slider("Σ threshold (escape)", 0.05, 0.5, 0.25, 0.01)
+# -------------------------------------------------
+# CSV input
+# -------------------------------------------------
+with st.expander("CSV format", expanded=False):
+    st.code(
+        "z,sigma\n"
+        "0.46,0.27\n"
+        "0.90,0.03\n"
+        "...\n\n"
+        "z     = trap strength proxy ∈ [0,1]\n"
+        "sigma = escape proxy ∈ [0,1]\n"
+        "Each row = one unordered phase event"
+    )
 
-smooth_order = st.sidebar.slider("Smoothing order", 2, 5, 3)
-max_window = st.sidebar.slider("Max smoothing window", 9, 51, 31, 2)
+uploaded = st.file_uploader("Upload CSV", type=["csv"])
+pasted = st.text_area("…or paste CSV here", height=180)
 
-# ============================================================
-# LOAD LIGHT CURVE (SAFE)
-# ============================================================
+# -------------------------------------------------
+# Load data
+# -------------------------------------------------
+raw = None
+if uploaded is not None:
+    raw = uploaded.read().decode("utf-8", errors="ignore")
+elif pasted.strip():
+    raw = pasted
 
-@st.cache_data(show_spinner=False)
-def load_lightcurve(target):
-    search = lk.search_lightcurve(target, mission="TESS")
-    if len(search) == 0:
-        return None
-    lc = search.download()
-    return lc.remove_nans()
-
-lc = load_lightcurve(target)
-
-if lc is None:
-    st.error("No TESS light curve found for this target.")
+if raw is None:
+    st.info("Upload or paste a CSV to begin.")
     st.stop()
 
-time = lc.time.value
-flux = lc.flux.value
-
-st.success(f"Loaded {len(time)} data points")
-
-# ============================================================
-# NORMALIZE & SMOOTH
-# ============================================================
-
-flux = flux / np.nanmedian(flux)
-
-N = len(flux)
-window = min(max_window, (N // 2) * 2 - 1)
-
-if window < 5:
-    st.error("Not enough data points to smooth safely.")
+try:
+    df = pd.read_csv(StringIO(raw))
+except Exception as e:
+    st.error(f"CSV parse error: {e}")
     st.stop()
 
-flux_smooth = savgol_filter(flux, window, smooth_order)
+if not {"z", "sigma"}.issubset(df.columns):
+    st.error("CSV must contain columns: z, sigma")
+    st.stop()
 
-# ============================================================
-# TOY 3 VARIABLES
-# ============================================================
+df = df[["z", "sigma"]].copy()
+df["z"] = pd.to_numeric(df["z"], errors="coerce")
+df["sigma"] = pd.to_numeric(df["sigma"], errors="coerce")
+df = df.dropna()
 
-Sigma = (flux_smooth - flux_smooth.min()) / (
-    flux_smooth.max() - flux_smooth.min()
+n_events = len(df)
+if n_events < 3:
+    st.warning("Very small event count — coherence may be unstable.")
+
+# -------------------------------------------------
+# Controls
+# -------------------------------------------------
+st.subheader("Phase Geometry Controls")
+
+colA, colB = st.columns(2)
+
+with colA:
+    bins = st.slider("Square resolution (bins per axis)", 4, 40, 16)
+with colB:
+    min_shared = st.slider(
+        "Minimum events per square to count as coherent",
+        2, 10, 2
+    )
+
+# -------------------------------------------------
+# Phase binning
+# -------------------------------------------------
+# Clip to [0,1] just in case
+z = np.clip(df["z"].to_numpy(), 0, 1)
+s = np.clip(df["sigma"].to_numpy(), 0, 1)
+
+# Bin indices
+z_bin = np.floor(z * bins).astype(int)
+s_bin = np.floor(s * bins).astype(int)
+
+# Edge safety
+z_bin[z_bin == bins] = bins - 1
+s_bin[s_bin == bins] = bins - 1
+
+df["z_bin"] = z_bin
+df["s_bin"] = s_bin
+
+# Count events per square
+counts = {}
+for zb, sb in zip(z_bin, s_bin):
+    counts[(zb, sb)] = counts.get((zb, sb), 0) + 1
+
+# Mark coherent events
+coherent_mask = np.array(
+    [counts[(zb, sb)] >= min_shared for zb, sb in zip(z_bin, s_bin)]
 )
 
-dt = np.gradient(time)
-dSigma_dt = np.gradient(Sigma) / dt
-d2Sigma_dt2 = np.gradient(dSigma_dt) / dt
+df["coherent"] = coherent_mask
 
-A = np.nanmax(np.abs(dSigma_dt))
-Z = 1.0 - np.abs(dSigma_dt) / A
-Z = np.clip(Z, 0, 1)
+# -------------------------------------------------
+# Coherence metric (core result)
+# -------------------------------------------------
+shared_events = int(coherent_mask.sum())
+C = shared_events / n_events if n_events > 0 else 0.0
 
-# ============================================================
-# CORNER & QUENCH
-# ============================================================
+# Regime classification
+if C >= 0.8:
+    regime = "Strong macroscopic coherence (Locked)"
+elif C >= 0.4:
+    regime = "Transitional / mixed regime"
+else:
+    regime = "Free / incoherent regime"
 
-corner_mask = (Z > z_th) & (Sigma < s_th)
+# -------------------------------------------------
+# Build square grid for visualisation
+# -------------------------------------------------
+grid = np.zeros((bins, bins))
 
-corner_time = np.sum(corner_mask) * np.nanmedian(dt)
-corner_fraction = np.sum(corner_mask) / len(Z)
+for (zb, sb), cnt in counts.items():
+    if cnt >= min_shared:
+        grid[sb, zb] = 2      # coherent square
+    else:
+        grid[sb, zb] = 1      # occupied but isolated
 
-quench_index = np.argmax(np.abs(d2Sigma_dt2))
-quench_time = time[quench_index]
+# -------------------------------------------------
+# Visualisation
+# -------------------------------------------------
+cmap = ListedColormap([
+    "#ffffff",  # empty
+    "#bfc5cc",  # isolated
+    "#3fbf6f"   # coherent
+])
 
-# ============================================================
-# METRICS
-# ============================================================
+fig, ax = plt.subplots(figsize=(6, 6))
+ax.imshow(grid, origin="lower", cmap=cmap)
+ax.set_title("Phase Square Projection")
+ax.set_xlabel("z (trap strength)")
+ax.set_ylabel("sigma (escape)")
+ax.set_xticks([])
+ax.set_yticks([])
+plt.tight_layout()
 
-st.subheader("Toy 3 Diagnostics")
+# -------------------------------------------------
+# Output
+# -------------------------------------------------
+left, right = st.columns([0.55, 0.45])
 
-c1, c2, c3 = st.columns(3)
-c1.metric("Corner dwell time (days)", f"{corner_time:.4f}")
-c2.metric("Corner dwell fraction", f"{corner_fraction*100:.2f}%")
-c3.metric("Quench time (BTJD)", f"{quench_time:.4f}")
-
-# ============================================================
-# PLOTS
-# ============================================================
-
-st.subheader("Diagnostics")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    fig, ax = plt.subplots(figsize=(5,5))
-    ax.plot(Z, Sigma, lw=1.4)
-    ax.set_xlim(0,1)
-    ax.set_ylim(0,1)
-    ax.set_xlabel("Z (Trap proxy)")
-    ax.set_ylabel("Σ (Escape proxy)")
-    ax.set_title("Phase Space")
-    ax.grid(alpha=0.4)
+with left:
     st.pyplot(fig)
 
-with col2:
-    fig, ax = plt.subplots(figsize=(6,4))
-    ax.plot(time, Sigma, label="Σ", lw=1.4)
-    ax.plot(time, Z, label="Z", lw=1.2)
-    ax.axvline(quench_time, color="r", ls="--", label="Quench")
-    ax.set_xlabel("Time (BTJD)")
-    ax.set_title("Time Series")
-    ax.legend()
-    ax.grid(alpha=0.4)
-    st.pyplot(fig)
+with right:
+    st.subheader("Coherence Diagnostics")
+    st.metric("Event count", n_events)
+    st.metric("Shared events", shared_events)
+    st.metric("Coherence C", f"{C:.3f}")
+    st.markdown(f"**Regime:** {regime}")
 
-with col3:
-    fig, ax = plt.subplots(figsize=(6,4))
-    ax.plot(time, corner_mask.astype(int), lw=1.5)
-    ax.set_xlabel("Time (BTJD)")
-    ax.set_ylabel("Corner")
-    ax.set_title("Corner Dwell Indicator")
-    ax.grid(alpha=0.4)
-    st.pyplot(fig)
-
-# ============================================================
-# INTERPRETATION
-# ============================================================
-
-with st.expander("What this means (Toy 3 interpretation)"):
+    st.markdown("---")
     st.markdown(
         """
-• High **Z** + low **Σ** = trapped state  
-• **Corner dwell** = delayed escape  
-• **Quench** = release / transition  
-• Late smooth behaviour hides early structure  
+**Interpretation**
+- Coherence does **not** imply simultaneity  
+- Order is irrelevant  
+- Time-like behaviour is **emergent**, not assumed  
 
-This diagnostic is **model-independent** and measures
-*escape-controlled evolution* directly.
+**Sandy’s Law:**  
+Trap → Transition → Escape
 """
     )
+
+# -------------------------------------------------
+# Table + download
+# -------------------------------------------------
+st.subheader("Event Table (Phase Only)")
+st.dataframe(df, use_container_width=True)
+
+csv_out = df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    "Download processed CSV",
+    csv_out,
+    file_name="phase_square_processed.csv",
+    mime="text/csv"
+)
+
+st.caption("This instrument intentionally contains no time, ordering, or dynamics.")
